@@ -1,0 +1,147 @@
+.room {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* Header */
+.room__header {
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 16px;
+  flex-shrink: 0;
+  z-index: 100;
+}
+.room__header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.room__header-center { display: flex; align-items: center; gap: 8px; }
+.room__header-right { display: flex; align-items: center; gap: 10px; }
+
+.room__logo-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: none; border: none; cursor: pointer;
+  transition: var(--transition);
+}
+.room__logo-btn:hover { opacity: 0.8; }
+.room__logo-icon {
+  font-family: var(--font-mono);
+  font-size: 16px; font-weight: 700;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.room__logo-name {
+  font-size: 15px; font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+.room__divider { width: 1px; height: 24px; background: var(--border-subtle); }
+
+.room__id-wrap { display: flex; align-items: center; gap: 6px; }
+.room__id-label { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+.room__id {
+  font-family: var(--font-mono);
+  font-size: 14px; font-weight: 600;
+  color: var(--accent-cyan);
+  letter-spacing: 0.12em;
+  background: rgba(0,212,255,0.08);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.room__status {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+.room__status--online { color: var(--accent-green); background: rgba(107,203,119,0.1); border: 1px solid rgba(107,203,119,0.2); }
+.room__status--offline { color: var(--accent-red); background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.2); }
+.dot-offline { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-red); display: inline-block; }
+
+/* Users pill */
+.room__users-pill { display: flex; align-items: center; }
+.room__user-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 2px solid;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff;
+  margin-left: -6px;
+  transition: var(--transition);
+  cursor: default;
+}
+.room__user-avatar:first-child { margin-left: 0; }
+.room__user-avatar--more {
+  background: var(--bg-card) !important;
+  border-color: var(--border-subtle) !important;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+/* Body */
+.room__body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Editor */
+.room__editor-wrap {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Aside */
+.room__aside {
+  width: 340px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+.room__aside-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.room__aside-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.room__aside-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+.room__aside-tab--active {
+  color: var(--accent-cyan);
+  border-bottom-color: var(--accent-cyan);
+  background: rgba(0,212,255,0.04);
+}
+.room__aside-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
