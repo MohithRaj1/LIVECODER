@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import socket from '../socket';
+import { executeCode } from '../api';
 import CodeEditor from '../components/CodeEditor';
 import Chat from '../components/Chat';
 import AiAssistant from '../components/AiAssistant';
@@ -23,6 +24,9 @@ export default function Room() {
   const [messages, setMessages] = useState([]);
   const [connected, setConnected] = useState(false);
   const [sidePanel, setSidePanel] = useState('chat'); // 'chat' | 'ai' | 'participants'
+  const [output, setOutput] = useState('');
+  const [executing, setExecuting] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
 
   const codeRef = useRef(code);
   codeRef.current = code;
@@ -85,6 +89,21 @@ export default function Room() {
     socket.emit('send-message', { roomId, username, text });
   };
 
+  const handleRun = async () => {
+    if (!code.trim()) return toast.error('Code is empty!');
+    setExecuting(true);
+    setShowTerminal(true);
+    setOutput('🚀 Running...\n');
+    try {
+      const res = await executeCode({ code, language });
+      setOutput(res.data.output);
+    } catch (err) {
+      setOutput(`❌ Error: ${err.response?.data?.error || 'Execution failed'}`);
+    } finally {
+      setExecuting(false);
+    }
+  };
+
   const copyRoomId = () => {
     navigator.clipboard.writeText(roomId);
     toast.success('Room ID copied!');
@@ -132,6 +151,10 @@ export default function Room() {
         </div>
 
         <div className="room__header-right">
+          <button id="btn-run" className={`btn btn-primary btn-sm ${executing ? 'executing' : ''}`} onClick={handleRun} disabled={executing}>
+            {executing ? '⏳ Running' : '▶ Run'}
+          </button>
+          <div className="room__divider" />
           <div className="room__users-pill">
             {users.slice(0, 4).map((u) => (
               <div
@@ -158,6 +181,18 @@ export default function Room() {
         {/* Editor */}
         <div className="room__editor-wrap">
           <CodeEditor code={code} language={language} onChange={handleCodeChange} />
+          
+          {/* Terminal / Output */}
+          <div className={`room__terminal ${showTerminal ? 'room__terminal--show' : ''}`}>
+            <div className="room__terminal-header">
+              <span>Terminal Output</span>
+              <div className="room__terminal-actions">
+                <button onClick={() => setOutput('')} title="Clear">Clear</button>
+                <button onClick={() => setShowTerminal(false)}>Close</button>
+              </div>
+            </div>
+            <pre className="room__terminal-body">{output || 'Waiting for output...'}</pre>
+          </div>
         </div>
 
         {/* Side Panel */}

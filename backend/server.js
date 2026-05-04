@@ -7,6 +7,7 @@ const cors = require('cors');
 
 const roomRoutes = require('./routes/rooms');
 const aiRoutes = require('./routes/ai');
+const executeRoutes = require('./routes/execute');
 const socketHandler = require('./socket/socketHandler');
 
 const app = express();
@@ -31,6 +32,7 @@ app.get('/', (req, res) => {
 // Routes
 app.use('/api/rooms', roomRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/execute', executeRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'LiveCode backend is running' });
