@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { createRoom, getRoom } from '../api';
+import { createRoom, getRoom, login, signup } from '../api';
 import './Home.css';
 
 const LANGUAGES = [
@@ -26,21 +26,59 @@ const FEATURES = [
 
 export default function Home() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState('create');
+  const [tab, setTab] = useState('login'); // login | signup | create | join
   const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [roomName, setRoomName] = useState('');
   const [language, setLanguage] = useState('javascript');
   const [joinRoomId, setJoinRoomId] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const authed = Boolean(localStorage.getItem('lc_token'));
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (!username.trim()) return toast.error('Enter username');
+    if (!password) return toast.error('Enter password');
+    setLoading(true);
+    try {
+      const res = await login({ username: username.trim(), password });
+      localStorage.setItem('lc_token', res.data.token);
+      sessionStorage.setItem('lc_username', res.data.user.username);
+      toast.success('Logged in');
+      setTab('create');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSignup = async (e) => {
+    e.preventDefault();
+    if (!username.trim()) return toast.error('Enter username');
+    if (!password) return toast.error('Enter password');
+    setLoading(true);
+    try {
+      const res = await signup({ username: username.trim(), password });
+      localStorage.setItem('lc_token', res.data.token);
+      sessionStorage.setItem('lc_username', res.data.user.username);
+      toast.success('Account created');
+      setTab('create');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Signup failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!username.trim()) return toast.error('Please enter your name');
+    if (!authed) return toast.error('Please login first');
     setLoading(true);
     try {
       const res = await createRoom({ name: roomName || 'My Room', language });
       const roomId = res.data.room.roomId;
-      sessionStorage.setItem('lc_username', username.trim());
       toast.success(`Room ${roomId} created!`);
       navigate(`/room/${roomId}`);
     } catch {
@@ -52,12 +90,11 @@ export default function Home() {
 
   const handleJoin = async (e) => {
     e.preventDefault();
-    if (!username.trim()) return toast.error('Please enter your name');
+    if (!authed) return toast.error('Please login first');
     if (!joinRoomId.trim()) return toast.error('Please enter a Room ID');
     setLoading(true);
     try {
       await getRoom(joinRoomId.trim().toUpperCase());
-      sessionStorage.setItem('lc_username', username.trim());
       navigate(`/room/${joinRoomId.trim().toUpperCase()}`);
     } catch {
       toast.error('Room not found. Double-check the Room ID.');
@@ -106,34 +143,87 @@ export default function Home() {
             {/* Tabs */}
             <div className="home__tabs">
               <button
+                id="tab-login"
+                className={`home__tab ${tab === 'login' ? 'home__tab--active' : ''}`}
+                onClick={() => setTab('login')}
+              >
+                Login
+              </button>
+              <button
+                id="tab-signup"
+                className={`home__tab ${tab === 'signup' ? 'home__tab--active' : ''}`}
+                onClick={() => setTab('signup')}
+              >
+                Sign up
+              </button>
+              <button
                 id="tab-create"
                 className={`home__tab ${tab === 'create' ? 'home__tab--active' : ''}`}
                 onClick={() => setTab('create')}
+                disabled={!authed}
               >
-                + Create Room
+                + Create
               </button>
               <button
                 id="tab-join"
                 className={`home__tab ${tab === 'join' ? 'home__tab--active' : ''}`}
                 onClick={() => setTab('join')}
+                disabled={!authed}
               >
-                → Join Room
+                → Join
               </button>
             </div>
 
-            {tab === 'create' ? (
-              <form className="home__form" onSubmit={handleCreate} id="form-create">
+            {tab === 'login' ? (
+              <form className="home__form" onSubmit={handleLogin} id="form-login">
                 <div className="home__field">
-                  <label className="home__label">Your Name</label>
+                  <label className="home__label">Username</label>
                   <input
-                    id="input-username-create"
                     className="input"
-                    placeholder="e.g. Alex Chen"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     maxLength={24}
                   />
                 </div>
+                <div className="home__field">
+                  <label className="home__label">Password</label>
+                  <input
+                    className="input"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
+                <button className="btn btn-primary btn-lg w-full" disabled={loading}>
+                  {loading ? '⏳ Logging in...' : 'Login'}
+                </button>
+              </form>
+            ) : tab === 'signup' ? (
+              <form className="home__form" onSubmit={handleSignup} id="form-signup">
+                <div className="home__field">
+                  <label className="home__label">Username</label>
+                  <input
+                    className="input"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    maxLength={24}
+                  />
+                </div>
+                <div className="home__field">
+                  <label className="home__label">Password</label>
+                  <input
+                    className="input"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
+                <button className="btn btn-primary btn-lg w-full" disabled={loading}>
+                  {loading ? '⏳ Creating...' : 'Create account'}
+                </button>
+              </form>
+            ) : tab === 'create' ? (
+              <form className="home__form" onSubmit={handleCreate} id="form-create">
                 <div className="home__field">
                   <label className="home__label">Room Name <span className="text-muted">(optional)</span></label>
                   <input
@@ -164,17 +254,6 @@ export default function Home() {
               </form>
             ) : (
               <form className="home__form" onSubmit={handleJoin} id="form-join">
-                <div className="home__field">
-                  <label className="home__label">Your Name</label>
-                  <input
-                    id="input-username-join"
-                    className="input"
-                    placeholder="e.g. Jordan Lee"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    maxLength={24}
-                  />
-                </div>
                 <div className="home__field">
                   <label className="home__label">Room ID</label>
                   <input

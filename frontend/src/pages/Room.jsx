@@ -1,12 +1,14 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import socket from '../socket';
+import socket, { setSocketAuth } from '../socket';
 import { executeCode } from '../api';
 import CodeEditor from '../components/CodeEditor';
 import Chat from '../components/Chat';
 import AiAssistant from '../components/AiAssistant';
 import Participants from '../components/Participants';
+import Analytics from '../components/Analytics';
+import VoiceChat from '../components/VoiceChat';
 import './Room.css';
 
 const LANGUAGES = [
@@ -17,43 +19,53 @@ export default function Room() {
   const { roomId } = useParams();
   const navigate = useNavigate();
   const username = sessionStorage.getItem('lc_username') || 'Anonymous';
+  const token = localStorage.getItem('lc_token');
 
   const [code, setCode] = useState('// Loading room...\n');
+  const [rev, setRev] = useState(0);
   const [language, setLanguage] = useState('javascript');
   const [users, setUsers] = useState([]);
   const [messages, setMessages] = useState([]);
   const [connected, setConnected] = useState(false);
-  const [sidePanel, setSidePanel] = useState('chat'); // 'chat' | 'ai' | 'participants'
+  const [sidePanel, setSidePanel] = useState('chat'); // 'chat' | 'ai' | 'participants' | 'analytics' | 'voice'
   const [output, setOutput] = useState('');
   const [executing, setExecuting] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
 
   const codeRef = useRef(code);
   codeRef.current = code;
+  const revRef = useRef(rev);
+  revRef.current = rev;
 
   // Connect socket
   useEffect(() => {
-    if (!username || username === 'Anonymous' && !sessionStorage.getItem('lc_username')) {
-      toast.error('Please enter your name first');
+    if (!token) {
+      toast.error('Please login first');
       navigate('/');
       return;
     }
 
+    setSocketAuth(token);
     socket.connect();
-    socket.emit('join-room', { roomId, username });
+    socket.emit('join-room', { roomId, token });
 
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
 
     socket.on('room-joined', ({ code: c, language: l, messages: msgs, users: u }) => {
       setCode(c);
+      setRev(0);
       setLanguage(l);
       setMessages(msgs);
       setUsers(u);
       toast.success(`Joined room ${roomId}`);
     });
 
-    socket.on('code-update', ({ code: c }) => setCode(c));
+    socket.on('ot-apply', ({ op, rev: nextRev }) => {
+      if (!op) return;
+      setCode((prev) => applyOpToText(prev, op));
+      if (typeof nextRev === 'number') setRev(nextRev);
+    });
     socket.on('language-update', ({ language: l }) => setLanguage(l));
     socket.on('new-message', (msg) => setMessages((prev) => [...prev, msg]));
     socket.on('user-joined', ({ users: u }) => setUsers(u));
@@ -64,7 +76,7 @@ export default function Room() {
       socket.off('connect');
       socket.off('disconnect');
       socket.off('room-joined');
-      socket.off('code-update');
+      socket.off('ot-apply');
       socket.off('language-update');
       socket.off('new-message');
       socket.off('user-joined');
@@ -72,12 +84,16 @@ export default function Room() {
       socket.off('error');
       socket.disconnect();
     };
-  }, [roomId, username, navigate]);
+  }, [roomId, token, navigate]);
 
-  const handleCodeChange = useCallback((newCode) => {
-    setCode(newCode);
-    socket.emit('code-change', { roomId, code: newCode });
-  }, [roomId]);
+  const handleOtOp = useCallback(
+    (op) => {
+      // Optimistic apply; server will rebroadcast with final revision.
+      setCode((prev) => applyOpToText(prev, op));
+      socket.emit('ot-op', { roomId, baseRev: revRef.current, op });
+    },
+    [roomId]
+  );
 
   const handleLanguageChange = (e) => {
     const lang = e.target.value;
@@ -95,7 +111,7 @@ export default function Room() {
     setShowTerminal(true);
     setOutput('🚀 Running...\n');
     try {
-      const res = await executeCode({ code, language });
+      const res = await executeCode({ roomId, code, language });
       setOutput(res.data.output);
     } catch (err) {
       setOutput(`❌ Error: ${err.response?.data?.error || 'Execution failed'}`);
@@ -180,7 +196,7 @@ export default function Room() {
       <div className="room__body">
         {/* Editor */}
         <div className="room__editor-wrap">
-          <CodeEditor code={code} language={language} onChange={handleCodeChange} />
+          <CodeEditor code={code} language={language} onOtOp={handleOtOp} />
           
           {/* Terminal / Output */}
           <div className={`room__terminal ${showTerminal ? 'room__terminal--show' : ''}`}>
@@ -203,6 +219,8 @@ export default function Room() {
               { id: 'chat', icon: '💬', label: 'Chat' },
               { id: 'ai', icon: '🤖', label: 'AI' },
               { id: 'participants', icon: '👥', label: `People (${users.length})` },
+              { id: 'analytics', icon: '📊', label: 'Analytics' },
+              { id: 'voice', icon: '🎙️', label: 'Voice' },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -233,9 +251,22 @@ export default function Room() {
             {sidePanel === 'participants' && (
               <Participants users={users} currentUsername={username} />
             )}
+            {sidePanel === 'analytics' && (
+              <Analytics roomId={roomId} />
+            )}
+            {sidePanel === 'voice' && (
+              <VoiceChat socket={socket} users={users} currentUsername={username} />
+            )}
           </div>
         </aside>
       </div>
     </div>
   );
+}
+
+function applyOpToText(text, op) {
+  const pos = Math.max(0, Math.min(text.length, Number(op.pos) || 0));
+  const del = Math.max(0, Math.min(text.length - pos, Number(op.del) || 0));
+  const ins = typeof op.ins === 'string' ? op.ins : '';
+  return text.slice(0, pos) + ins + text.slice(pos + del);
 }

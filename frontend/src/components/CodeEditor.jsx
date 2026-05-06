@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import './CodeEditor.css';
 
@@ -15,13 +15,47 @@ const LANGUAGE_MAP = {
   sql: 'sql',
 };
 
-export default function CodeEditor({ code, language, onChange }) {
+export default function CodeEditor({ code, language, onOtOp }) {
   const editorRef = useRef(null);
+  const suppressRef = useRef(false);
 
-  const handleMount = (editor) => {
+  const handleMount = (editor, monaco) => {
     editorRef.current = editor;
     editor.focus();
+
+    const model = editor.getModel();
+    if (!model) return;
+
+    model.onDidChangeContent((e) => {
+      if (suppressRef.current) return;
+      if (!onOtOp) return;
+      for (const ch of e.changes) {
+        const start = model.getOffsetAt(ch.range.getStartPosition());
+        const end = model.getOffsetAt(ch.range.getEndPosition());
+        onOtOp({ pos: start, del: Math.max(0, end - start), ins: ch.text || '' });
+      }
+    });
   };
+
+  // Keep editor in sync with remote changes by setting value,
+  // while preventing echo back into OT.
+  useEffect(() => {
+    const editor = editorRef.current;
+    const model = editor?.getModel?.();
+    if (!editor || !model) return;
+
+    const current = model.getValue();
+    if (current === code) return;
+
+    suppressRef.current = true;
+    editor.executeEdits('remote', [
+      {
+        range: model.getFullModelRange(),
+        text: code,
+      },
+    ]);
+    suppressRef.current = false;
+  }, [code]);
 
   return (
     <div className="code-editor">
@@ -40,7 +74,6 @@ export default function CodeEditor({ code, language, onChange }) {
         height="100%"
         language={LANGUAGE_MAP[language] || 'javascript'}
         value={code}
-        onChange={(val) => onChange(val || '')}
         onMount={handleMount}
         theme="vs-dark"
         options={{

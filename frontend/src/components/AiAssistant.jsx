@@ -1,20 +1,21 @@
 import { useState } from 'react';
-import { getAISuggestion } from '../api';
+import { aiAnalyze } from '../api';
 import './AiAssistant.css';
 
 export default function AiAssistant({ code, language }) {
+  const [mode, setMode] = useState('suggest'); // suggest | explain | debug
   const [question, setQuestion] = useState('');
   const [response, setResponse] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const QUICK_PROMPTS = [
-    'Explain this code',
-    'Find bugs',
-    'Optimize performance',
-    'Add comments',
-    'Suggest improvements',
-    'Convert to async/await',
+    { label: 'Explain this code', mode: 'explain', question: '' },
+    { label: 'Find bugs', mode: 'debug', question: '' },
+    { label: 'Suggest improvements', mode: 'suggest', question: '' },
+    { label: 'Optimize performance', mode: 'suggest', question: 'Optimize this for performance and readability.' },
+    { label: 'Add comments', mode: 'suggest', question: 'Add helpful comments and clarify intent.' },
+    { label: 'Convert to async/await', mode: 'suggest', question: 'Convert this to async/await (if applicable).' },
   ];
 
   const ask = async (q) => {
@@ -24,7 +25,7 @@ export default function AiAssistant({ code, language }) {
     setError('');
     setResponse('');
     try {
-      const res = await getAISuggestion({ code, language, question: prompt });
+      const res = await aiAnalyze({ code, language, mode, question: prompt });
       setResponse(res.data.response);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to reach AI. Check backend & OpenAI key.');
@@ -49,19 +50,41 @@ export default function AiAssistant({ code, language }) {
         </div>
       </div>
 
+      <div className="ai__modes">
+        {[
+          { id: 'suggest', label: 'Suggest' },
+          { id: 'explain', label: 'Explain' },
+          { id: 'debug', label: 'Debug' },
+        ].map((m) => (
+          <button
+            key={m.id}
+            className={`ai__mode-btn ${mode === m.id ? 'ai__mode-btn--active' : ''}`}
+            onClick={() => setMode(m.id)}
+            disabled={loading}
+            type="button"
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
       {/* Quick prompts */}
       <div className="ai__quick">
         <div className="ai__quick-label">Quick Actions</div>
         <div className="ai__quick-grid">
           {QUICK_PROMPTS.map((p) => (
             <button
-              key={p}
-              id={`ai-quick-${p.replace(/\s+/g, '-').toLowerCase()}`}
+              key={p.label}
+              id={`ai-quick-${p.label.replace(/\s+/g, '-').toLowerCase()}`}
               className="ai__quick-btn"
-              onClick={() => { setQuestion(p); ask(p); }}
+              onClick={() => {
+                setMode(p.mode);
+                setQuestion(p.question || p.label);
+                ask(p.question || p.label);
+              }}
               disabled={loading}
             >
-              {p}
+              {p.label}
             </button>
           ))}
         </div>

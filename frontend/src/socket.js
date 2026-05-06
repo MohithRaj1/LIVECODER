@@ -5,4 +5,8 @@ const socket = io('http://localhost:5001', {
   transports: ['websocket'],
 });
 
+export function setSocketAuth(token) {
+  socket.auth = { token };
+}
+
 export default socket;
