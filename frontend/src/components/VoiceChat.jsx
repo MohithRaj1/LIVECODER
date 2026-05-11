@@ -209,7 +209,7 @@ export default function VoiceChat({ socket, users, currentUsername }) {
       </div>
 
       <div style={{ fontSize: 12, opacity: 0.75 }}>
-        Connected peers: {Array.from(pcsRef.current.keys()).length}
+        Other participants in room: {peers.length}
       </div>
     </div>
   );

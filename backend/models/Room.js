@@ -10,9 +10,8 @@ const RoomSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
-RoomSchema.pre('save', function (next) {
+RoomSchema.pre('save', function () {
   this.updatedAt = Date.now();
-  next();
 });
 
 module.exports = mongoose.model('Room', RoomSchema);

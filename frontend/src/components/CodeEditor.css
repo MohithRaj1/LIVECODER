@@ -42,4 +42,18 @@
   font-size: 11px;
   color: var(--text-muted);
   letter-spacing: 0.03em;
+  max-width: min(520px, 55vw);
+  text-align: right;
+  line-height: 1.35;
+}
+
+.code-editor__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 120px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
 }

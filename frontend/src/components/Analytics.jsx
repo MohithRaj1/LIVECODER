@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { getRoomAnalytics } from '../api';
 
 export default function Analytics({ roomId }) {
@@ -6,7 +6,7 @@ export default function Analytics({ roomId }) {
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     setLoading(true);
     setErr('');
     try {
@@ -17,12 +17,14 @@ export default function Analytics({ roomId }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [roomId]);
 
   useEffect(() => {
-    refresh().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId]);
+    const id = window.setTimeout(() => {
+      refresh().catch(() => {});
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [refresh]);
 
   return (
     <div style={{ padding: 16, height: '100%', overflow: 'auto' }}>

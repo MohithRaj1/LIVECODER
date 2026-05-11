@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { createRoom, getRoom, login, signup } from '../api';
@@ -24,9 +24,19 @@ const FEATURES = [
   { icon: '🌍', title: '10+ Languages', desc: 'Support for JavaScript, Python, Java, Go, Rust, and more.' },
 ];
 
+function apiErrorMessage(err, fallback) {
+  const d = err?.response?.data;
+  if (typeof d?.error === 'string') return d.error;
+  if (typeof d?.message === 'string') return d.message;
+  if (!err?.response) return 'Cannot reach server. Start the backend and check the port in vite proxy (VITE_DEV_BACKEND_URL).';
+  return fallback;
+}
+
 export default function Home() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState('login'); // login | signup | create | join
+  const [tab, setTab] = useState(() => (localStorage.getItem('lc_token') ? 'create' : 'login'));
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('lc_token') || '');
+  const [displayName, setDisplayName] = useState(() => sessionStorage.getItem('lc_username') || '');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [roomName, setRoomName] = useState('');
@@ -34,7 +44,23 @@ export default function Home() {
   const [joinRoomId, setJoinRoomId] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const authed = Boolean(localStorage.getItem('lc_token'));
+  const authed = Boolean(authToken);
+
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'lc_token') {
+        const v = e.newValue || '';
+        setAuthToken(v);
+        if (v) {
+          const u = sessionStorage.getItem('lc_username');
+          if (u) setDisplayName(u);
+          setTab((t) => (t === 'login' || t === 'signup' ? 'create' : t));
+        }
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -43,12 +69,15 @@ export default function Home() {
     setLoading(true);
     try {
       const res = await login({ username: username.trim(), password });
-      localStorage.setItem('lc_token', res.data.token);
+      const token = res.data.token;
+      localStorage.setItem('lc_token', token);
+      setAuthToken(token);
       sessionStorage.setItem('lc_username', res.data.user.username);
+      setDisplayName(res.data.user.username);
       toast.success('Logged in');
       setTab('create');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Login failed');
+      toast.error(apiErrorMessage(err, 'Login failed'));
     } finally {
       setLoading(false);
     }
@@ -61,12 +90,15 @@ export default function Home() {
     setLoading(true);
     try {
       const res = await signup({ username: username.trim(), password });
-      localStorage.setItem('lc_token', res.data.token);
+      const token = res.data.token;
+      localStorage.setItem('lc_token', token);
+      setAuthToken(token);
       sessionStorage.setItem('lc_username', res.data.user.username);
+      setDisplayName(res.data.user.username);
       toast.success('Account created');
       setTab('create');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Signup failed');
+      toast.error(apiErrorMessage(err, 'Signup failed'));
     } finally {
       setLoading(false);
     }
@@ -81,8 +113,8 @@ export default function Home() {
       const roomId = res.data.room.roomId;
       toast.success(`Room ${roomId} created!`);
       navigate(`/room/${roomId}`);
-    } catch {
-      toast.error('Failed to create room. Is the backend running?');
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'Failed to create room'));
     } finally {
       setLoading(false);
     }
@@ -96,8 +128,8 @@ export default function Home() {
     try {
       await getRoom(joinRoomId.trim().toUpperCase());
       navigate(`/room/${joinRoomId.trim().toUpperCase()}`);
-    } catch {
-      toast.error('Room not found. Double-check the Room ID.');
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'Room not found. Double-check the Room ID.'));
     } finally {
       setLoading(false);
     }
@@ -116,8 +148,31 @@ export default function Home() {
           <span className="home__logo-icon">{'</>'}</span>
           <span className="home__logo-text">LiveCode</span>
         </div>
-        <div className="badge badge-green">
-          <span className="dot-live" /> Live Platform
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {authed && (
+            <>
+              <span className="text-muted" style={{ fontSize: 13 }}>
+                Signed in as <strong>{displayName || 'user'}</strong>
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  localStorage.removeItem('lc_token');
+                  sessionStorage.removeItem('lc_username');
+                  setDisplayName('');
+                  setAuthToken('');
+                  setTab('login');
+                  toast.success('Logged out');
+                }}
+              >
+                Log out
+              </button>
+            </>
+          )}
+          <div className="badge badge-green">
+            <span className="dot-live" /> Live Platform
+          </div>
         </div>
       </nav>
 
@@ -140,6 +195,28 @@ export default function Home() {
         {/* Card */}
         <section className="home__card-wrap animate-fade-in" style={{ animationDelay: '0.1s' }}>
           <div className="home__card card-glass">
+            {authed && (
+              <div className="home__final-strip">
+                <div className="home__final-strip-left">
+                  <div className="home__final-avatar" aria-hidden>
+                    {(displayName || '?')[0].toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="home__final-title">You are in</div>
+                    <div className="home__final-name">{displayName || 'LiveCoder'}</div>
+                  </div>
+                </div>
+                <div className="home__final-strip-actions">
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => setTab('create')}>
+                    New room
+                  </button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setTab('join')}>
+                    Join room
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Tabs */}
             <div className="home__tabs">
               <button
@@ -193,6 +270,7 @@ export default function Home() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
+                  <span className="text-muted" style={{ fontSize: 12 }}>At least 6 characters (signup)</span>
                 </div>
                 <button className="btn btn-primary btn-lg w-full" disabled={loading}>
                   {loading ? '⏳ Logging in...' : 'Login'}
@@ -217,6 +295,7 @@ export default function Home() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
+                  <span className="text-muted" style={{ fontSize: 12 }}>At least 6 characters</span>
                 </div>
                 <button className="btn btn-primary btn-lg w-full" disabled={loading}>
                   {loading ? '⏳ Creating...' : 'Create account'}

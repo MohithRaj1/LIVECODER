@@ -1,7 +1,21 @@
 import axios from 'axios';
 
+/**
+ * In dev, use `/api` so Vite proxies to the backend (avoids wrong port / CORS).
+ * Set VITE_API_BASE to a full origin in production, e.g. https://api.example.com
+ */
+function getApiBaseURL() {
+  const v = import.meta.env.VITE_API_BASE;
+  if (v != null && String(v).trim() !== '') {
+    const base = String(v).replace(/\/$/, '');
+    return base.endsWith('/api') ? base : `${base}/api`;
+  }
+  if (import.meta.env.DEV) return '/api';
+  return `${typeof window !== 'undefined' ? window.location.origin : ''}/api`;
+}
+
 const API = axios.create({
-  baseURL: 'http://localhost:5001/api',
+  baseURL: getApiBaseURL(),
 });
 
 API.interceptors.request.use((config) => {

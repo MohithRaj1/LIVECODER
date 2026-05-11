@@ -32,10 +32,10 @@ export default function Room() {
   const [executing, setExecuting] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
 
-  const codeRef = useRef(code);
-  codeRef.current = code;
   const revRef = useRef(rev);
-  revRef.current = rev;
+  useEffect(() => {
+    revRef.current = rev;
+  }, [rev]);
 
   // Connect socket
   useEffect(() => {
@@ -196,7 +196,7 @@ export default function Room() {
       <div className="room__body">
         {/* Editor */}
         <div className="room__editor-wrap">
-          <CodeEditor code={code} language={language} onOtOp={handleOtOp} />
+          <CodeEditor code={code} language={language} roomId={roomId} onOtOp={handleOtOp} />
           
           {/* Terminal / Output */}
           <div className={`room__terminal ${showTerminal ? 'room__terminal--show' : ''}`}>
