@@ -15,6 +15,33 @@ const LANGUAGES = [
   'javascript','typescript','python','java','cpp','go','rust','html','css','sql',
 ];
 
+function detectLanguage(code, currentLang) {
+  if (typeof code !== 'string') return currentLang;
+  const trimmed = code.trim();
+  if (/public\s+class\s+\w+|System\.out\.print|public\s+static\s+void\s+main/i.test(trimmed)) {
+    return 'java';
+  }
+  if (/#include\s*<iostream>|std::cout|using\s+namespace\s+std/i.test(trimmed)) {
+    return 'cpp';
+  }
+  if (/#include\s*<stdio\.h>|printf\s*\(/i.test(trimmed)) {
+    return 'c';
+  }
+  if (/package\s+main|func\s+main\s*\(/i.test(trimmed)) {
+    return 'go';
+  }
+  if (/fn\s+main\s*\(\)|println!\s*\(/i.test(trimmed)) {
+    return 'rust';
+  }
+  if (/(?:def\s+\w+\s*\(|if\s+__name__\s*==\s*['"]__main__['"]|import\s+sys)/i.test(trimmed) && !/const\s+|let\s+|var\s+|function\s+/.test(trimmed)) {
+    return 'python';
+  }
+  if (/(?:CREATE\s+TABLE|SELECT\s+[\s\S]+FROM|INSERT\s+INTO)/i.test(trimmed)) {
+    return 'sql';
+  }
+  return currentLang;
+}
+
 export default function Room() {
   const { roomId } = useParams();
   const navigate = useNavigate();
@@ -27,17 +54,37 @@ export default function Room() {
   const [users, setUsers] = useState([]);
   const [messages, setMessages] = useState([]);
   const [connected, setConnected] = useState(false);
-  const [sidePanel, setSidePanel] = useState('chat'); // 'chat' | 'ai' | 'participants' | 'analytics' | 'voice'
+  const [sidePanel, setSidePanel] = useState('chat');
   const [output, setOutput] = useState('');
+  const [stdin, setStdin] = useState('');
   const [executing, setExecuting] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
+  const [execMeta, setExecMeta] = useState({ status: null, time: null, memory: null, error: null, fallback: false });
 
   const revRef = useRef(rev);
-  useEffect(() => {
-    revRef.current = rev;
-  }, [rev]);
+  const codeRef = useRef(code);
+  const joinedRef = useRef(false);
 
-  // Connect socket
+  useEffect(() => { revRef.current = rev; }, [rev]);
+  useEffect(() => { codeRef.current = code; }, [code]);
+
+  const handleDownloadCode = () => {
+    const fileExts = {
+      javascript: 'js', typescript: 'ts', python: 'py', java: 'java',
+      cpp: 'cpp', go: 'go', rust: 'rs', html: 'html', css: 'css', sql: 'sql'
+    };
+    const ext = fileExts[language] || 'txt';
+    const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `room_${roomId}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Downloaded room_${roomId}.${ext}`);
+  };
+
+  // Connect socket — runs once
   useEffect(() => {
     if (!token) {
       toast.error('Please login first');
@@ -45,52 +92,78 @@ export default function Room() {
       return;
     }
 
+    // Guard against React StrictMode double-mount
+    if (joinedRef.current) return;
+    joinedRef.current = true;
+
     setSocketAuth(token);
-    socket.connect();
+    if (!socket.connected) {
+      socket.connect();
+    }
     socket.emit('join-room', { roomId, token });
 
-    socket.on('connect', () => setConnected(true));
-    socket.on('disconnect', () => setConnected(false));
+    const onConnect = () => setConnected(true);
+    const onDisconnect = () => setConnected(false);
 
-    socket.on('room-joined', ({ code: c, language: l, messages: msgs, users: u }) => {
-      setCode(c);
+    const onRoomJoined = ({ code: c, language: l, messages: msgs, users: u }) => {
+      setCode(c || '');
       setRev(0);
-      setLanguage(l);
-      setMessages(msgs);
-      setUsers(u);
+      setLanguage(l || 'javascript');
+      setMessages(msgs || []);
+      setUsers(u || []);
       toast.success(`Joined room ${roomId}`);
-    });
+    };
 
-    socket.on('ot-apply', ({ op, rev: nextRev }) => {
+    // Remote OT: Only update the React state.
+    // CodeEditor watches the `code` prop and applies it properly.
+    const onOtApply = ({ op, rev: nextRev, sender }) => {
       if (!op) return;
-      setCode((prev) => applyOpToText(prev, op));
       if (typeof nextRev === 'number') setRev(nextRev);
-    });
-    socket.on('language-update', ({ language: l }) => setLanguage(l));
-    socket.on('new-message', (msg) => setMessages((prev) => [...prev, msg]));
-    socket.on('user-joined', ({ users: u }) => setUsers(u));
-    socket.on('user-left', ({ users: u }) => setUsers(u));
-    socket.on('error', ({ message }) => toast.error(message));
+      // Only apply remote ops (sender !== us) to state
+      if (socket.id !== sender) {
+        setCode((prev) => applyOpToText(prev, op));
+      }
+    };
+
+    const onLanguageUpdate = ({ language: l }) => setLanguage(l);
+    const onNewMessage = (msg) => setMessages((prev) => [...prev, msg]);
+    const onUserJoined = ({ users: u }) => setUsers(u);
+    const onUserLeft = ({ users: u }) => setUsers(u);
+    const onError = ({ message }) => toast.error(message);
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    socket.on('room-joined', onRoomJoined);
+    socket.on('ot-apply', onOtApply);
+    socket.on('language-update', onLanguageUpdate);
+    socket.on('new-message', onNewMessage);
+    socket.on('user-joined', onUserJoined);
+    socket.on('user-left', onUserLeft);
+    socket.on('error', onError);
 
     return () => {
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.off('room-joined');
-      socket.off('ot-apply');
-      socket.off('language-update');
-      socket.off('new-message');
-      socket.off('user-joined');
-      socket.off('user-left');
-      socket.off('error');
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      socket.off('room-joined', onRoomJoined);
+      socket.off('ot-apply', onOtApply);
+      socket.off('language-update', onLanguageUpdate);
+      socket.off('new-message', onNewMessage);
+      socket.off('user-joined', onUserJoined);
+      socket.off('user-left', onUserLeft);
+      socket.off('error', onError);
       socket.disconnect();
+      joinedRef.current = false;
     };
-  }, [roomId, token, navigate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, token]);
 
-  const handleOtOp = useCallback(
-    (op) => {
-      // Optimistic apply; server will rebroadcast with final revision.
-      setCode((prev) => applyOpToText(prev, op));
-      socket.emit('ot-op', { roomId, baseRev: revRef.current, op });
+  // Called by CodeEditor when the user types locally
+  const handleLocalChange = useCallback(
+    (newCode, op) => {
+      setCode(newCode);
+      if (op) {
+        socket.emit('ot-op', { roomId, baseRev: revRef.current, op });
+      }
     },
     [roomId]
   );
@@ -105,16 +178,60 @@ export default function Room() {
     socket.emit('send-message', { roomId, username, text });
   };
 
-  const handleRun = async () => {
-    if (!code.trim()) return toast.error('Code is empty!');
+  const terminalBodyRef = useRef(null);
+  const editorInstanceRef = useRef(null);
+
+  useEffect(() => {
+    if (terminalBodyRef.current) {
+      terminalBodyRef.current.scrollTop = terminalBodyRef.current.scrollHeight;
+    }
+  }, [output]);
+
+  const handleCopyOutput = () => {
+    if (!output) return;
+    navigator.clipboard.writeText(output);
+    toast.success('Terminal output copied!');
+  };
+
+  const handleRun = async (overrideCode) => {
+    const current = (typeof overrideCode === 'string' && overrideCode.trim())
+      ? overrideCode
+      : (editorInstanceRef.current ? editorInstanceRef.current.getValue() : codeRef.current);
+
+    if (!current || !current.trim()) return toast.error('Code is empty!');
+
+    let targetLang = language;
+    const detected = detectLanguage(current, language);
+    if (detected !== language) {
+      targetLang = detected;
+      setLanguage(detected);
+      socket.emit('language-change', { roomId, language: detected });
+      toast.success(`Auto-switched language to ${detected.toUpperCase()}`);
+    }
+
+    if (targetLang === 'html' || targetLang === 'css') {
+      setShowTerminal(true);
+      setExecMeta({ status: 'Live Preview Active', time: '0.00', memory: '0 KB', error: null, fallback: false });
+      return;
+    }
     setExecuting(true);
     setShowTerminal(true);
     setOutput('🚀 Running...\n');
+    setExecMeta({ status: null, time: null, memory: null, error: null, fallback: false });
     try {
-      const res = await executeCode({ roomId, code, language });
-      setOutput(res.data.output);
+      const res = await executeCode({ roomId, code: current, language: targetLang, stdin });
+      setOutput(res.data.output || 'No output');
+      setExecMeta({
+        status: res.data.status || (res.data.error ? 'Error' : 'Accepted'),
+        time: res.data.time,
+        memory: res.data.memory,
+        error: res.data.error,
+        fallback: res.data.fallback,
+      });
     } catch (err) {
-      setOutput(`❌ Error: ${err.response?.data?.error || 'Execution failed'}`);
+      const errMsg = err.response?.data?.error || 'Execution failed';
+      setOutput(`❌ Error: ${errMsg}`);
+      setExecMeta({ status: 'Failed', time: null, memory: null, error: errMsg, fallback: false });
     } finally {
       setExecuting(false);
     }
@@ -167,7 +284,10 @@ export default function Room() {
         </div>
 
         <div className="room__header-right">
-          <button id="btn-run" className={`btn btn-primary btn-sm ${executing ? 'executing' : ''}`} onClick={handleRun} disabled={executing}>
+          <button id="btn-download" className="btn btn-ghost btn-sm" onClick={handleDownloadCode} title="Download File">
+            📥 Download
+          </button>
+          <button id="btn-run" className={`btn btn-primary btn-sm ${executing ? 'executing' : ''}`} onClick={() => handleRun()} disabled={executing}>
             {executing ? '⏳ Running' : '▶ Run'}
           </button>
           <div className="room__divider" />
@@ -196,18 +316,78 @@ export default function Room() {
       <div className="room__body">
         {/* Editor */}
         <div className="room__editor-wrap">
-          <CodeEditor code={code} language={language} roomId={roomId} onOtOp={handleOtOp} />
+          <CodeEditor
+            code={code}
+            language={language}
+            roomId={roomId}
+            onLocalChange={handleLocalChange}
+            onRun={handleRun}
+            onEditorMount={(ed) => { editorInstanceRef.current = ed; }}
+            socket={socket}
+            users={users}
+          />
+
           
           {/* Terminal / Output */}
           <div className={`room__terminal ${showTerminal ? 'room__terminal--show' : ''}`}>
             <div className="room__terminal-header">
-              <span>Terminal Output</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span>{language === 'html' || language === 'css' ? 'Live Preview' : 'Terminal Output'}</span>
+                {execMeta.status && (
+                  <span className={`badge ${execMeta.error ? 'badge-red' : execMeta.fallback || String(execMeta.status).includes('Local') ? 'badge-yellow' : 'badge-green'}`}>
+                    {execMeta.status}
+                  </span>
+                )}
+                {execMeta.time != null && (
+                  <span className="text-muted" style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                    ⏱️ {execMeta.time}s
+                  </span>
+                )}
+                {execMeta.memory != null && (
+                  <span className="text-muted" style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                    🧠 {typeof execMeta.memory === 'number' ? (execMeta.memory > 1000 ? `${(execMeta.memory / 1024).toFixed(1)} MB` : `${execMeta.memory} KB`) : execMeta.memory}
+                  </span>
+                )}
+              </div>
               <div className="room__terminal-actions">
-                <button onClick={() => setOutput('')} title="Clear">Clear</button>
-                <button onClick={() => setShowTerminal(false)}>Close</button>
+                {language !== 'html' && language !== 'css' && (
+                  <>
+                    <button id="btn-copy-output" onClick={handleCopyOutput} title="Copy Output">📋 Copy</button>
+                    <button id="btn-clear-output" onClick={() => { setOutput(''); setExecMeta({ status: null, time: null, memory: null, error: null, fallback: false }); }} title="Clear Output">🧹 Clear</button>
+                  </>
+                )}
+                <button id="btn-close-terminal" onClick={() => setShowTerminal(false)}>✕ Close</button>
               </div>
             </div>
-            <pre className="room__terminal-body">{output || 'Waiting for output...'}</pre>
+            {language === 'html' || language === 'css' ? (
+              <iframe
+                className="room__terminal-body room__terminal-preview"
+                srcDoc={
+                  language === 'html'
+                    ? code
+                    : `<html><head><style>${code}</style></head><body style="background:#1e1e2e;color:#cdd6f4;font-family:sans-serif;padding:20px;"><h2>CSS Live Preview</h2><p>Preview of your styles:</p><button class="btn">Mock Button</button><div class="card" style="margin-top:15px;padding:15px;border:1px dashed #f38ba8;border-radius:6px;">Mock Card</div></body></html>`
+                }
+                title="Live Preview"
+                sandbox="allow-scripts"
+                style={{ width: '100%', height: 'calc(100% - 36px)', border: 'none', background: '#ffffff' }}
+              />
+            ) : (
+              <div style={{ height: 'calc(100% - 36px)', display: 'flex', flexDirection: 'column' }}>
+                <pre ref={terminalBodyRef} className="room__terminal-body" style={{ flex: 1, margin: 0, overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{output || 'Waiting for output...'}</pre>
+                <div style={{ padding: '6px 12px', background: '#181825', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: '#a6adc8', whiteSpace: 'nowrap' }}>Standard Input (stdin):</span>
+                  <input
+                    id="terminal-stdin-input"
+                    type="text"
+                    className="input"
+                    style={{ flex: 1, height: 28, fontSize: 12, padding: '2px 8px' }}
+                    placeholder="Enter input for your program..."
+                    value={stdin}
+                    onChange={(e) => setStdin(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

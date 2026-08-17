@@ -4,10 +4,13 @@ export default function VoiceChat({ socket, users, currentUsername }) {
   const [enabled, setEnabled] = useState(false);
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState('');
+  const [volumeLevel, setVolumeLevel] = useState(0);
 
   const localStreamRef = useRef(null);
   const pcsRef = useRef(new Map()); // socketId -> RTCPeerConnection
   const remoteAudioRefs = useRef(new Map()); // socketId -> HTMLAudioElement
+  const animFrameRef = useRef(null);
+  const audioCtxRef = useRef(null);
 
   const peers = useMemo(
     () => (users || []).filter((u) => u.username !== currentUsername),
@@ -18,7 +21,39 @@ export default function VoiceChat({ socket, users, currentUsername }) {
     if (localStreamRef.current) return localStreamRef.current;
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     localStreamRef.current = stream;
+    setupVolumeAnalyzer(stream);
     return stream;
+  }
+
+  function setupVolumeAnalyzer(stream) {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      audioCtxRef.current = ctx;
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64;
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const checkVolume = () => {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / dataArray.length;
+        const normalized = Math.min(100, Math.round((average / 128) * 100));
+        setVolumeLevel(normalized);
+        animFrameRef.current = requestAnimationFrame(checkVolume);
+      };
+
+      checkVolume();
+    } catch {
+      // AudioContext optional / fallback
+    }
   }
 
   function getOrCreatePc(remoteSocketId) {
@@ -70,7 +105,6 @@ export default function VoiceChat({ socket, users, currentUsername }) {
     try {
       setEnabled(true);
       await ensureLocalAudio();
-      // Initiate offers to current peers
       for (const p of peers) {
         await connectToPeer(p.socketId);
       }
@@ -84,6 +118,17 @@ export default function VoiceChat({ socket, users, currentUsername }) {
     setEnabled(false);
     setMuted(false);
     setError('');
+    setVolumeLevel(0);
+
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
+
     for (const pc of pcsRef.current.values()) {
       try {
         pc.close();
@@ -183,11 +228,18 @@ export default function VoiceChat({ socket, users, currentUsername }) {
   return (
     <div style={{ padding: 16, height: '100%', overflow: 'auto' }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-        <div style={{ fontWeight: 800 }}>Voice (beta)</div>
+        <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>Voice Chat</span>
+          {enabled && (
+            <span className={`badge ${muted ? 'badge-red' : 'badge-green'}`}>
+              {muted ? '🔇 Muted' : '🎙️ Live'}
+            </span>
+          )}
+        </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {!enabled ? (
             <button className="btn btn-primary btn-sm" onClick={() => start().catch(() => {})}>
-              Start
+              Start Voice
             </button>
           ) : (
             <>
@@ -195,7 +247,7 @@ export default function VoiceChat({ socket, users, currentUsername }) {
                 {muted ? 'Unmute' : 'Mute'}
               </button>
               <button className="btn btn-ghost btn-sm" onClick={stop}>
-                Stop
+                Disconnect
               </button>
             </>
           )}
@@ -204,12 +256,34 @@ export default function VoiceChat({ socket, users, currentUsername }) {
 
       {error ? <div className="ai__error">⚠️ {error}</div> : null}
 
+      {/* Mic Audio Meter */}
+      {enabled && !muted && (
+        <div style={{ marginBottom: 14, background: 'rgba(2,6,23,0.4)', padding: 10, borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ fontSize: 11, color: '#a6adc8', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
+            <span>Microphone Audio Level</span>
+            <span>{volumeLevel > 15 ? '🗣️ Speaking' : 'Silent'}</span>
+          </div>
+          <div style={{ height: 6, width: '100%', background: '#181825', borderRadius: 3, overflow: 'hidden' }}>
+            <div
+              style={{
+                height: '100%',
+                width: `${volumeLevel}%`,
+                background: volumeLevel > 40 ? 'linear-gradient(90deg, #a6e3a1, #f9e2af, #f38ba8)' : '#a6e3a1',
+                transition: 'width 0.1s ease',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 10 }}>
-        {enabled ? 'Microphone is on. You should hear other participants as they join.' : 'Start to enable microphone.'}
+        {enabled
+          ? 'Microphone connected. Audio is encrypted & peer-to-peer.'
+          : 'Click "Start Voice" to join the room audio channel.'}
       </div>
 
       <div style={{ fontSize: 12, opacity: 0.75 }}>
-        Other participants in room: {peers.length}
+        Participants in room: {peers.length + 1}
       </div>
     </div>
   );

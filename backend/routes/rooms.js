@@ -24,6 +24,26 @@ router.post('/create', requireAuth, async (req, res) => {
   }
 });
 
+// Get user's recent rooms
+router.get('/user/mine', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.sub;
+    // Find rooms owned by user or where user had activity
+    const activityRoomIds = await ActivityEvent.distinct('roomId', { userId });
+    const rooms = await Room.find({
+      $or: [
+        { ownerId: userId },
+        { roomId: { $in: activityRoomIds } },
+      ],
+    })
+      .sort({ updatedAt: -1 })
+      .limit(10);
+    res.json({ success: true, rooms });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Get room by ID
 router.get('/:roomId', requireAuth, async (req, res) => {
   try {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { createRoom, getRoom, login, signup } from '../api';
+import { createRoom, getRoom, getUserRooms, login, signup } from '../api';
 import './Home.css';
 
 const LANGUAGES = [
@@ -43,8 +43,19 @@ export default function Home() {
   const [language, setLanguage] = useState('javascript');
   const [joinRoomId, setJoinRoomId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [recentRooms, setRecentRooms] = useState([]);
 
   const authed = Boolean(authToken);
+
+  useEffect(() => {
+    if (authed) {
+      getUserRooms()
+        .then((res) => setRecentRooms(res.data.rooms || []))
+        .catch(() => {});
+    } else {
+      setRecentRooms([]);
+    }
+  }, [authed]);
 
   useEffect(() => {
     const onStorage = (e) => {
@@ -352,6 +363,29 @@ export default function Home() {
             )}
           </div>
         </section>
+
+        {/* Recent Rooms */}
+        {authed && recentRooms.length > 0 && (
+          <section className="home__recent animate-fade-in" style={{ animationDelay: '0.15s' }}>
+            <h3 className="home__recent-title">⚡ Your Recent Rooms</h3>
+            <div className="home__recent-grid">
+              {recentRooms.map((r) => (
+                <div key={r.roomId} className="home__recent-card card-glass" onClick={() => navigate(`/room/${r.roomId}`)}>
+                  <div className="home__recent-header">
+                    <span className="home__recent-name">{r.name || 'Untitled Room'}</span>
+                    <span className="badge badge-cyan">{r.language || 'javascript'}</span>
+                  </div>
+                  <div className="home__recent-id">
+                    ID: <code>{r.roomId}</code>
+                  </div>
+                  <button className="btn btn-ghost btn-sm w-full" style={{ marginTop: 10 }}>
+                    Rejoin Room →
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Features */}
         <section className="home__features animate-fade-in" style={{ animationDelay: '0.2s' }}>

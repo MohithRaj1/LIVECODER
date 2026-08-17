@@ -47,14 +47,14 @@ socketHandler(io);
 const connectDB = async () => {
   try {
     const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/livecoder';
-    await mongoose.connect(mongoUri);
+    await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 2000 });
     console.log('✅ MongoDB connected');
   } catch (err) {
     console.warn('⚠️ Standard MongoDB connection failed, starting in-memory database...');
     const { MongoMemoryServer } = require('mongodb-memory-server');
     const mongoServer = await MongoMemoryServer.create();
     const uri = mongoServer.getUri();
-    await mongoose.connect(uri);
+    await mongoose.connect(uri, { serverSelectionTimeoutMS: 2000 });
     console.log(`✅ In-memory MongoDB connected: ${uri}`);
   }
 

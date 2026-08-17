@@ -165,7 +165,7 @@ module.exports = (io) => {
         doc.rev = doc.history.length;
 
         // Broadcast to everyone (including sender) so clients can align revisions.
-        io.to(roomId).emit('ot-apply', { op: transformed, rev: doc.rev });
+        io.to(roomId).emit('ot-apply', { op: transformed, rev: doc.rev, sender: socket.id });
 
         // Lightweight analytics: track edit deltas
         const delta = (transformed.ins?.length || 0) - (transformed.del || 0);
